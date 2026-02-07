@@ -604,6 +604,10 @@ for run_looper = run_num:total_runs
         end
         
         % Save reward information to bx_trial_info
+        if run_looper == 1
+            reward_amount = trial_accuracy * 0; % No reward in practice, but log 0 for consistency
+        end
+        
         bx_trial_info(trial_looper).reward_amount = reward_amount; % Reward for this trial
         bx_trial_info(trial_looper).total_earnings = ACCcount; % Accumulated reward
         

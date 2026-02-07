@@ -117,7 +117,7 @@ for sub_num = 1:total_subs
                 practice_run_matrix(i, SCENE_ID) = counter;
                 practice_run_matrix(i, REP) = 0; %this doesn't matter for practice
                 practice_run_matrix(i, TARGET) = target_choice(i);
-                practice_run_matrix(i, CONDITION) = target_loc(i); %always valid for practice
+                practice_run_matrix(i, CONDITION) = target_loc(i);
                 practice_run_matrix(i, RUN) = 1; %practice run
                 counter = counter + 1;
                 if counter > 6
