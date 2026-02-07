@@ -1,7 +1,7 @@
 %-------------------------------------------------------------------------
-% Script: randomizor_drinking.m
+% Script: randomizor_reward.m
 % Author: Justin Frandsen
-% Date: 2025/08/05 yyyy/mm/dd
+% Date: 2026/02/06 yyyy/mm/dd
 % Description: Prerandomizor for the drinking_ss experiment.
 %
 % For each subject:
@@ -109,17 +109,18 @@ for sub_num = 1:total_subs
             %practice run
             this_run_scene = scene_randomizor(scene_randomizor(:, RUN) == 1, :);
             % Practice run: Randomize scenes, no distractors/conditions
-            target_choice =[1 2 3 4 4 3 2 1];
-            practice_run_matrix = zeros(8, 5);
+            target_choice =[1 2 3 4 1 2 3 4 1 2 3 4];
+            target_loc    =[0 0 0 0 1 1 1 1 2 2 2 2];
+            practice_run_matrix = zeros(12, 5);
             counter = 1;
-            for i = 1:8
+            for i = 1:12
                 practice_run_matrix(i, SCENE_ID) = counter;
                 practice_run_matrix(i, REP) = 0; %this doesn't matter for practice
                 practice_run_matrix(i, TARGET) = target_choice(i);
-                practice_run_matrix(i, CONDITION) = 0; %always valid for practice
+                practice_run_matrix(i, CONDITION) = target_loc(i); %always valid for practice
                 practice_run_matrix(i, RUN) = 1; %practice run
                 counter = counter + 1;
-                if counter > 4
+                if counter > 6
                     counter = 1;
                 end
             end
