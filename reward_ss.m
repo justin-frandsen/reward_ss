@@ -393,27 +393,6 @@ for run_looper = run_num:total_runs
         
         crit_dist_position = []; 
         rect_id = 2; % ID for critical distractor AOI
-        
-        % ---- draw CRITICAL DISTRACTOR only in training
-        if run_looper <= 5 && run_looper > 1
-            crit_pos  = possible_positions(4); % 4th entry encodes CD position
-            remaining_positions = setdiff(remaining_positions, crit_pos, 'stable'); % remove CD position from remaining positions
-            crit_rect = saved_positions{scene_inds, crit_pos};
-            if t_directions(4) == 0
-                % left critical distractor
-                Screen('DrawTexture', search, sorted_left_shapes_textures(cd_texture_index), [], crit_rect);
-            elseif t_directions(4) == 1
-                % right critical distractor
-                Screen('DrawTexture', search, sorted_right_shapes_textures(cd_texture_index), [], crit_rect);
-            end
-
-            if eyetracking
-                % Define AOIs
-                Eyelink('command', 'draw_box %d %d %d %d %d', ceil(crit_rect(1)), ceil(crit_rect(2)), ceil(crit_rect(3)), ceil(crit_rect(4)), 7);  % Critical distractor in gray
-                Eyelink('Message', '!V IAREA RECTANGLE %d %d %d %d %d CritDistBox', rect_id, ceil(crit_rect(1)), ceil(crit_rect(2)), ceil(crit_rect(3)), ceil(crit_rect(4)));
-                rect_id = rect_id + 1; % Increment rect_id for next AOI
-            end
-        end
 
         for k = 1:numel(remaining_positions)
             this_pos  = remaining_positions(k);       % map TYPE → POSITION
@@ -587,7 +566,7 @@ for run_looper = run_num:total_runs
                 if trial_condition == 0 % Target in associated position
                     reward_amount = 0.15; % High reward for associated position
                 else
-                    reward_amount = 0.05; % Low reward for other positions
+                    reward_amount = 0.01; % Low reward for other positions
                 end
                 ACCcount = ACCcount + reward_amount; % Accumulate total earnings
                 feedback_text = sprintf('+$%.2f\nTotal: $%.2f', reward_amount, ACCcount);

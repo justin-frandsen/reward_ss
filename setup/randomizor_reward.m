@@ -104,6 +104,7 @@ for sub_num = 1:total_subs
         run_struct = struct();
         run_name = sprintf('run%d', run); % this is because the first run is practice
 
+        practice_trials = 12; % Number of trials in practice run
         % Extract this run’s rows
         if run == 1
             %practice run
@@ -111,9 +112,9 @@ for sub_num = 1:total_subs
             % Practice run: Randomize scenes, no distractors/conditions
             target_choice =[1 2 3 4 1 2 3 4 1 2 3 4];
             target_loc    =[0 0 0 0 1 1 1 1 2 2 2 2];
-            practice_run_matrix = zeros(12, 5);
+            practice_run_matrix = zeros(practice_trials, 5);
             counter = 1;
-            for i = 1:12
+            for i = 1:practice_trials
                 practice_run_matrix(i, SCENE_ID) = counter;
                 practice_run_matrix(i, REP) = 0; %this doesn't matter for practice
                 practice_run_matrix(i, TARGET) = target_choice(i);
@@ -129,14 +130,14 @@ for sub_num = 1:total_subs
                 [SCENE_ID TARGET], [1 1], 10000);
 
             numRows = size(trial_distractor_inds, 1);
-            randIdx = randperm(numRows, 8);  % random permutation of row indices
+            randIdx = randperm(numRows, practice_trials);  % random permutation of row indices
             run_distractors = trial_distractor_inds(randIdx, :);
 
-            all_possible_locations = zeros(8, 4);
+            all_possible_locations = zeros(practice_trials, 4);
             loc1 = [1 2];
             loc2 = [3 4];
             loc3 = [5 6];
-            for trial = 1:8
+            for trial = 1:12
                 rand1 = loc1(randperm(2));
                 rand2 = loc2(randperm(2));
                 rand3 = loc3(randperm(2));
