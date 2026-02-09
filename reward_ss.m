@@ -145,7 +145,7 @@ if exist(fullfile(bx_output_folder_name, bx_file_name), 'file')
     error('Subject bx file already exists. Delete the file to rerun with the same subject number.');
 end
 
-% Test if preprocessed eyemovement data file already exists
+% Test if preprocessed eye movement data file already exists
 eye_file_name = sprintf(eye_file_format, sub_num, run_num);
 if exist(fullfile(eye_output_folder_name, eye_file_name), 'file')
     error('Subject eye file already exists. Delete the file to rerun with the same subject number.');
@@ -609,34 +609,20 @@ for run_looper = run_num:total_runs
     %% SAVE EYETRACKING DATA
     if eyetracking
         Eyelink('Message', 'Experiment end Subject %d Run %d', sub_num, run_looper);
-        % Go idle and close file
-        Eyelink('Command', 'set_idle_mode');
+
+        % ---- REQUIRED SEQUENCE ----
+        Eyelink('SetOfflineMode');
+        Eyelink('Command', 'clear_screen 0');
         WaitSecs(0.5);
-        status = Eyelink('CloseFile'); %close the EDF file
+
+        status = Eyelink('CloseFile');
         if status ~= 0
-            fprintf('CloseFile failed with status %d\n', status);
+            warning('CloseFile returned status %d', status);
         end
-        
-        % Wait a bit longer for safety
-        WaitSecs(2);
+        WaitSecs(0.5);
 
-        % Full local path to save EDF file
-        localPath = fullfile(edf_output_folder_name, edf_file_name);
-
-        maxTries = 3;
-        for attempt = 1:maxTries
-            try
-                status = Eyelink('ReceiveFile', edf_file_name, localPath, 1);
-                if status > 0 && exist(localPath, 'file')
-                    fprintf('EDF transfer succeeded on attempt %d\n', attempt);
-                    break;
-                else
-                    warning('EDF transfer attempt %d failed, retrying...\n', attempt);
-                end
-            catch
-                warning('Error during ReceiveFile attempt %d\n', attempt);
-            end
-        end
+        % ---- TRANSFER EDF ----
+        transferEDF(edf_file_name, edf_output_folder_name, eyetracking, w, el, height);
     end
 
     %% SAVE BX DATA
@@ -684,3 +670,34 @@ pfp_ptb_cleanup; % cleanup PTB
 %close all; % close all windows
 %clear all; % clear all variables
 sca; % close PTB
+
+function transferEDF(edf_file_name, edf_output_folder_name, eyetracking, window, el, height)
+try
+    if eyetracking
+        Screen('FillRect', window, el.backgroundcolour);
+        Screen('DrawText', window, 'Receiving data file...', 5, height-35, 0);
+        Screen('Flip', window);
+
+        fprintf('Receiving data file ''%s''\n', edf_file_name);
+
+        maxTries = 3;
+        for attempt = 1:maxTries
+            status = Eyelink('ReceiveFile', [], edf_output_folder_name, 1);
+
+            if status > 0 && exist(fullfile(edf_output_folder_name, edf_file_name), 'file')
+                fprintf('EDF transfer succeeded (attempt %d): %.1f KB\n', ...
+                        attempt, status/1024);
+                return;
+            else
+                warning('EDF transfer attempt %d failed', attempt);
+                WaitSecs(0.5);
+            end
+        end
+
+        error('EDF transfer failed after %d attempts', maxTries);
+    end
+catch
+    fprintf('Problem receiving EDF file ''%s''\n', edf_file_name);
+    psychrethrow(psychlasterror);
+end
+end
