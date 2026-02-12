@@ -335,10 +335,8 @@ for run_looper = run_num:total_runs
         target_texture_index       = target_inds(target_index1);
         target_association         = target_associations(target_index1); %1 = wall 2 = counter, 3 = floor.
 
-        trial_condition                = scene_randomizor(trial_looper, CONDITION);
-        this_run_distractors           = this_subj_this_run.this_run_distractors(trial_looper, :);
-        length_this_run_distractors    = length(this_run_distractors);
-        this_trial_distractors         = noncritical_distractors(1:length_this_run_distractors-1); % remove the last one which is just the run number
+        trial_condition            = scene_randomizor(trial_looper, CONDITION);
+        this_trial_distractors     = this_subj_this_run.this_run_distractors(trial_looper, 1:3);
 
         %% DRAW SCENE   
         search = Screen('OpenOffscreenWindow', scrID, col.bg, rect, 32);
