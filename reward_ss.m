@@ -287,7 +287,7 @@ for run_looper = run_num:total_runs
         end
         
         % Create unique EDF filename for this run
-        edf_file_name = sprintf('CSS%.3dR%.1d.edf', sub_num, run_looper);
+        edf_file_name = sprintf('RS%.3dR%.1d.edf', sub_num, run_looper);
 
         % Open EDF file on Eyelink computer
         i = Eyelink('OpenFile', edf_file_name);
