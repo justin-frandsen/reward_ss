@@ -63,7 +63,7 @@ eye_used             = 2; % 1 = left eye, 2 = right eye, 3 = both eyes want to c
 border_line_width = 30;
 penalty           = 2000;  % ms
 timeout           = 5000;  % ms
-feedback_duration   = 2; % sec
+feedback_duration   = 1; % sec
 
 % Trial control
 main_runs      = 6;
