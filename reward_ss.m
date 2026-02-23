@@ -563,8 +563,8 @@ for run_looper = run_num:total_runs
             if trial_accuracy == 1 % Correct response
                 if trial_condition == 0 % Target in associated position
                     reward_amount = 0.15; % High reward for associated position
-                else
-                    reward_amount = 0.01; % Low reward for other positions
+                else % current reward total is ~27.36 which is $2.36 cents over the $25 maybe we lower the reward amount for high reward trials?
+                    reward_amount = 0.02; % Low reward for other positions
                 end
                 ACCcount = ACCcount + reward_amount; % Accumulate total earnings
                 feedback_text = sprintf('+$%.2f\nTotal: $%.2f', reward_amount, ACCcount);
@@ -575,9 +575,11 @@ for run_looper = run_num:total_runs
             end
 
             % Draw feedback
+            Screen('Flip', w); %draw blank screen before feedback for 1 second
+            WaitSecs(1);
             DrawFormattedText(w, feedback_text, 'center', 'center', feedback_color);
-            Screen('Flip', w);
-            WaitSecs(feedback_duration);
+            Screen('Flip', w); %draw feedback screen for 1.5 seconds
+            WaitSecs(1.5);
         end
         
         % Save reward information to bx_trial_info
