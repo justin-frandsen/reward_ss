@@ -124,6 +124,29 @@ MAT_file_format  = 'subj%.3d_run%.2d.mat';
 %% GET SUBJECT INFO
 [sub_num, run_num, experimenter_initials] = experiment_setup();
 
+if run_num > 2
+    last_run_file = fullfile(bx_output_folder_name, ...
+        sprintf('Subj%.3dRun%.2d.csv', sub_num, run_num-1));
+
+    if exist(last_run_file, 'file')
+        last_run_data = readtable(last_run_file);
+
+        % Get last non-empty earnings value
+        last_valid_idx = find(~isnan(last_run_data.total_earnings), 1, 'last');
+
+        if ~isempty(last_valid_idx)
+            ACCcount = last_run_data.total_earnings(last_valid_idx);
+        else
+            ACCcount = 0;
+        end
+    else
+        warning('Previous run file not found. Starting earnings at 0.');
+        ACCcount = 0;
+    end
+else
+    ACCcount = 0;
+end
+
 %% MAKE SURE data directory and its subdirectories exist
 subdirs = {'bx_data', 'edf_data', 'eye_data', 'log_files', 'MAT_data'};
 
@@ -215,7 +238,6 @@ if eyetracking
 end
 %% Start Experiment
 t = 0;
-ACCcount = 0;
 trialcounter = 0;
 
 %% EXPERIMENT START
@@ -235,6 +257,15 @@ for run_looper = run_num:total_runs
         shape_positions = load('trial_structure_files/shape_positions.mat');
     end
     saved_positions = shape_positions.saved_positions;
+
+        %% Loop through trials
+    if run_looper == 1
+        total_trials = 12;
+    elseif run_looper > 1
+        total_trials = 72;
+    end
+
+    clear bx_trial_info; % Clear bx_trial_info before initializing for the new run
 
     %% INITIALIZE BX STRUCT
     bx_trial_info(1:total_trials) = struct( ...
@@ -263,7 +294,8 @@ for run_looper = run_num:total_runs
         'trial_offset', [], ...                      % stim offset (absolute)
         'response_clock_time', [], ...               % time of response key
         'timestamp', '', ...                         % optional formatted datetime
-        'total_earnings', [] ...                     % total earnings for the participant
+        'total_earnings', [], ...                     % total earnings for the participant
+        'reward_amount', [] ...                   % reward amount for this trial
     );
 
 
@@ -291,6 +323,7 @@ for run_looper = run_num:total_runs
 
         % Open EDF file on Eyelink computer
         i = Eyelink('OpenFile', edf_file_name);
+        Eyelink('Message', 'DISPLAY_COORDS 0 0 %d %d', width-1, height-1);
         if i ~= 0
             fprintf('Cannot create EDF file ''%s''.\n', edf_file_name);
             Eyelink('Shutdown');
@@ -307,13 +340,6 @@ for run_looper = run_num:total_runs
     
     % show instructions
     showInstructions(w, sorted_instruction_shapes_textures, key.left, key.right);
-
-    %% Loop through trials
-    if run_looper == 1
-        total_trials = 12;
-    elseif run_looper > 1
-        total_trials = 72;
-    end
 
     for trial_looper = 1:total_trials
         if eyetracking
@@ -396,13 +422,12 @@ for run_looper = run_num:total_runs
             this_pos  = remaining_positions(k);       % map TYPE → POSITION
             this_rect = saved_positions{scene_inds, this_pos};
             distractor_texture_index = this_trial_distractors(k);
-            this_distarctor = noncritical_distractors(distractor_texture_index);
             if t_directions(1+k) == 0
                 % left non-critical distractor
-                Screen('DrawTexture', search, sorted_left_shapes_textures(this_distarctor), [], this_rect);
+                Screen('DrawTexture', search, sorted_left_shapes_textures(distractor_texture_index), [], this_rect);
             elseif t_directions(1+k) == 1
                 % right non-critical distractor
-                Screen('DrawTexture', search, sorted_right_shapes_textures(this_distarctor), [], this_rect);
+                Screen('DrawTexture', search, sorted_right_shapes_textures(distractor_texture_index), [], this_rect);
             end
 
             if eyetracking
@@ -459,9 +484,6 @@ for run_looper = run_num:total_runs
         if eyetracking
             Eyelink('Message', 'START_TIME SEARCH_PERIOD');
             Eyelink('Message', 'SYNCTIME');
-            Eyelink('Message', '!V TRIAL_VAR condition %d', trial_condition);
-            Eyelink('Message', '!V TRIAL_VAR block %d', run_looper);
-            Eyelink('Message', '!V TRIAL_VAR scene %d', scene_inds);
         end
         % --- Wait for response or until deadline ---
         responseMade = false;
@@ -558,27 +580,39 @@ for run_looper = run_num:total_runs
             % Draw feedback
             DrawFormattedText(w, feedback_text, 'center', 'center', feedback_color);
             Screen('Flip', w);
-            WaitSecs(feedback_duration);
+            WaitSecs(1);
         elseif run_looper > 1
-            if trial_accuracy == 1 % Correct response
-                if trial_condition == 0 % Target in associated position
-                    reward_amount = 0.15; % High reward for associated position
-                else % current reward total is ~27.36 which is $2.36 cents over the $25 maybe we lower the reward amount for high reward trials?
-                    reward_amount = 0.02; % Low reward for other positions
+            if trial_accuracy == 1
+                if trial_condition == 0
+                    reward_amount = 15;
+                else
+                    reward_amount = 2;
                 end
-                ACCcount = ACCcount + reward_amount; % Accumulate total earnings
-                feedback_text = sprintf('+$%.2f\nTotal: $%.2f', reward_amount, ACCcount);
+            
+                ACCcount = ACCcount + reward_amount;
+            
+                feedback_text = sprintf('+$%.2f\nTotal: $%.2f', reward_amount/100, ACCcount/100);
                 feedback_color = col.green;
-            else
-                feedback_text = sprintf('No reward\nTotal: $%.2f', ACCcount);
+            
+            else % incorrect trial
+                reward_amount = 0;
+            
+                feedback_text = sprintf('No reward\nTotal: $%.2f', ACCcount/100);
                 feedback_color = col.red;
             end
 
             % Draw feedback
+            Screen('FillRect', w, col.bg);
             Screen('Flip', w); %draw blank screen before feedback for 1 second
+            if eyetracking
+                Eyelink('Message', 'START_TIME feedback_blank');
+            end
             WaitSecs(1);
             DrawFormattedText(w, feedback_text, 'center', 'center', feedback_color);
             Screen('Flip', w); %draw feedback screen for 1.5 seconds
+            if eyetracking
+                Eyelink('Message', 'START_TIME feedback_display');
+            end
             WaitSecs(1.5);
         end
         
@@ -594,12 +628,14 @@ for run_looper = run_num:total_runs
         Screen('flip', w);
 
         if eyetracking
-            
-            Eyelink('Message', 'END_TIME SEARCH_PERIOD');
             Eyelink('Message', '!V IAREA END');
             Eyelink('Message', '!V TRIAL_VAR RT %d', RT);
             Eyelink('Message', '!V TRIAL_VAR acc %d', trial_accuracy);
+            Eyelink('Message', '!V TRIAL_VAR condition %d', trial_condition);
+            Eyelink('Message', '!V TRIAL_VAR block %d', run_looper);
+            Eyelink('Message', '!V TRIAL_VAR scene %d', scene_inds);
 
+            Eyelink('Message', 'TRIAL_RESULT 0');
             Eyelink('StopRecording');
         end
         WaitSecs(.5); % 500 ms ITI
