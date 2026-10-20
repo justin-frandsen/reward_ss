@@ -3,9 +3,9 @@
 % Author: Justin Frandsen
 % Date: 16/09/2025 %dd/mm/yyyy
 % Description: This script runs a visual search experiment where participants
-%              search for a target shape among distractor shapes. Participants
-%              are given a viewing window after the search duration to see if
-%              exploration leads to distractor learning.
+%              search for a target shape among distractor shapes. Each target will have a reward
+%              value associated with it, and participants will be informed of these values after 
+%              each trial they get correct.
 %
 % Additional Comments:
 % - This script is designed to be run after the setup scripts have been executed.
@@ -121,7 +121,7 @@ instruction_shapes       = 'stimuli/shapes/instructions';
 % Output formats
 bx_file_format   = 'bx_Subj%.3dRun%.2d.csv';
 eye_file_format  = 'fixation_data_subj_%.3d_run_%.3d.csv';
-edf_file_format  = 'S%.3dR%.1d.edf';
+edf_file_format  = 'RWD%.3dR%.1d.edf';
 MAT_file_format  = 'subj%.3d_run%.2d.mat';
 
 %% GET SUBJECT INFO
@@ -304,7 +304,7 @@ for run_looper = run_num:total_runs
         end
         
         % Create unique EDF filename for this run
-        edf_file_name = sprintf('CSS%.3dR%.1d.edf', sub_num, run_looper);
+        edf_file_name = sprintf(edf_file_format, sub_num, run_looper);
 
         % Open EDF file on Eyelink computer
         i = Eyelink('OpenFile', edf_file_name);
@@ -336,6 +336,7 @@ for run_looper = run_num:total_runs
         if eyetracking
             Eyelink('command', 'clear_screen 0'); % optional: clear tracker display
             Eyelink('Message', 'TRIALID %d', trial_looper); % support said to put this before the recording starts
+            Eyelink('command', 'record_status_message "Trial %d/%d"', trial_looper, total_trials);
             Eyelink('StartRecording');
             WaitSecs(0.1); % Wait for 100 ms to allow the tracker to
             HideCursor(scrID);         % Hide mouse cursor before the next trial
