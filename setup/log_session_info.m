@@ -1,4 +1,4 @@
-function log_session_info(subjectID, runNum, experimenter_initials, totalTrials, startTime, endTime, logFilePath, eyetracking, edfFileName)
+function log_session_info(subjectID, runNum, experimenter_initials, totalTrials, startTime, endTime, logFilePath, eyetracking, edfFileName, edf_transfer_ok)
 % log_session_info
 % Logs basic session metadata to a plain .txt log file
 %
@@ -8,6 +8,13 @@ function log_session_info(subjectID, runNum, experimenter_initials, totalTrials,
 %   startTime    - output of now() when session starts
 %   endTime      - output of now() when session ends
 %   logFilePath  - full path to log file (e.g., 'data/subj101_log.txt')
+%   edf_transfer_ok - (optional) true/false whether the EDF file transferred
+%                     successfully. Omit or pass [] if unknown.
+
+    % ---- default for optional transfer-status arg ----
+    if nargin < 10 || isempty(edf_transfer_ok)
+        edf_transfer_ok = NaN;   % unknown / not provided
+    end
 
     % Convert time to readable format
     startStr = datestr(startTime, 'yyyy-mm-dd HH:MM:SS');
@@ -68,6 +75,18 @@ function log_session_info(subjectID, runNum, experimenter_initials, totalTrials,
 
         fprintf(fid, 'Sample Rate: %s Hz\n', Eyelink('Command', 'sample_rate?'));
         fprintf(fid, 'Calibration: completed\n');
+        
+        if isnan(edf_transfer_ok)
+            fprintf(fid, 'EDF Transfer: UNKNOWN (status not provided)\n');
+        elseif edf_transfer_ok
+            fprintf(fid, 'EDF Transfer: SUCCESS\n');
+        else
+            fprintf(fid, 'EDF Transfer: FAILED - retrieve %s from Host PC manually!\n', edfFileName);
+        end
+    elseif  ~eyetracking
+        fprintf(fid, '\n--- EyeLink Info ---\n');
+        fprintf(fid, 'EyeLink: NOT USED\n');
+        fprintf(fid, 'Dummy Mode: ACTIVE\n');
     end
     fclose(fid);
     fprintf('[INFO] Session log saved to %s\n', logFilePath);

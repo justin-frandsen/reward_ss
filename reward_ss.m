@@ -61,6 +61,10 @@ fix.timeout             = 5000;
 fix.reqDur              = 500;
 eye_used             = 2; % 1 = left eye, 2 = right eye, 3 = both eyes want to change this to get it from the tracker later
 
+% Reward (cents per correct trial)
+high_reward = 13; % target in its associated (high-reward) region
+low_reward  = 2;  % target in one of the other two regions
+
 % Feedback
 border_line_width = 30;
 penalty           = 2000;  % ms
@@ -350,6 +354,16 @@ for run_looper = run_num:total_runs
             Eyelink('command', 'record_status_message "Trial %d/%d"', trial_looper, total_trials);
             Eyelink('StartRecording');
             WaitSecs(0.1); % Wait for 100 ms to allow the tracker to
+
+            % Ask the tracker which eye it is recording (only valid while
+            % recording): 0 = left, 1 = right, 2 = binocular, -1 = unknown.
+            % eye_used indexes samp.gx/gy, where 1 = left and 2 = right.
+            eye_available = Eyelink('EyeAvailable');
+            if eye_available == 0 || eye_available == 1
+                eye_used = eye_available + 1;
+            elseif eye_available == 2
+                eye_used = 1; % binocular: use the left eye
+            end % otherwise keep the previous/default eye_used
             HideCursor(scrID);         % Hide mouse cursor before the next trial
             SetMouse(10, 10, scrID);   % Move the mouse to the corner -- in case some jerk has unhidden it 
         end
@@ -570,7 +584,7 @@ for run_looper = run_num:total_runs
         bx_trial_info(trial_looper).timestamp = datestr(now, 'yyyy-mm-dd HH:MM:SS.FFF');
 
         %If run 1 give incorrect or correct feedback. If correct give feedback for the amount of money made that trial and the total amount of money.
-        %high reward trials earch them .15 cents and low reward trials are .05 cents. If incorrect show red X and say no money earned that trial and show total amount of money.
+        %high reward trials earn high_reward cents and low reward trials earn low_reward cents (see SETTINGS). If incorrect say no money earned that trial and show total amount of money.
         if run_looper == 1
             if trial_accuracy == 1 % Correct response
                 feedback_text = 'Correct!';
@@ -587,9 +601,9 @@ for run_looper = run_num:total_runs
         elseif run_looper > 1
             if trial_accuracy == 1
                 if trial_condition == 0
-                    reward_amount = 15;
+                    reward_amount = high_reward;
                 else
-                    reward_amount = 2;
+                    reward_amount = low_reward;
                 end
             
                 ACCcount = ACCcount + reward_amount;
@@ -658,16 +672,20 @@ for run_looper = run_num:total_runs
         if status ~= 0
             warning('CloseFile returned status %d', status);
         end
-        WaitSecs(0.5);
+        WaitSecs(4); % give the Host PC time to finish writing the file before asking for it
 
         % ---- TRANSFER EDF ----
-        transferEDF(edf_file_name, edf_output_folder_name, eyetracking, w, el, height);
+        edf_transfer_ok = transferEDF(edf_file_name, edf_output_folder_name, eyetracking, w, el, height);
     end
 
     %% SAVE BX DATA
     % log session info
     sessionEnd = now;
-    log_session_info(sub_num, run_looper, experimenter_initials, total_trials, sessionStart, sessionEnd, logFile, eyetracking, edf_file_name);
+    if eyetracking
+        log_session_info(sub_num, run_looper, experimenter_initials, total_trials, sessionStart, sessionEnd, logFile, eyetracking, edf_file_name, edf_transfer_ok);
+    else
+        log_session_info(sub_num, run_looper, experimenter_initials, total_trials, sessionStart, sessionEnd, logFile, eyetracking);
+    end
     
     % save trial data to CSV
     trialTable = struct2table(bx_trial_info);
@@ -705,38 +723,71 @@ DrawFormattedText(w, 'Experiment Complete! Thank you for participating.', 'cente
 Screen('Flip', w);
 KbWait([], 2);   % wait for spacebar (or any key if you don’t filter)
 
+% Payout screen for the experimenter (ACCcount is the running total in cents)
+payout_text = sprintf('Total payout: $%.2f', ACCcount/100);
+fprintf('[INFO] Subject %d %s\n', sub_num, payout_text);
+DrawFormattedText(w, [payout_text '\n\nPlease get the experimenter.'], 'center', 'center', col.fg);
+Screen('Flip', w);
+KbWait([], 2);   % any key closes the experiment
+
 pfp_ptb_cleanup; % cleanup PTB
 %close all; % close all windows
 %clear all; % clear all variables
 sca; % close PTB
 
-function transferEDF(edf_file_name, edf_output_folder_name, eyetracking, window, el, height)
+function ok = transferEDF(edf_file_name, edf_output_folder_name, eyetracking, window, el, height)
+% Pulls the EDF from the Host PC and only reports success when the local
+% file is the same size as the file the tracker says it sent.
+ok = false;
+if ~eyetracking, return; end
+
+% Drop out of realtime priority while the file comes over the network
+oldPriority = Priority(0);
 try
-    if eyetracking
-        Screen('FillRect', window, el.backgroundcolour);
-        Screen('DrawText', window, 'Receiving data file...', 5, height-35, 0);
-        Screen('Flip', window);
+    Screen('FillRect', window, el.backgroundcolour);
+    DrawFormattedText(window, 'Receiving data file...', 'center', 'center', 0);
+    Screen('Flip', window);
 
-        fprintf('Receiving data file ''%s''\n', edf_file_name);
-
-        maxTries = 3;
-        for attempt = 1:maxTries
-            status = Eyelink('ReceiveFile', [], edf_output_folder_name, 1);
-
-            if status > 0 && exist(fullfile(edf_output_folder_name, edf_file_name), 'file')
-                fprintf('EDF transfer succeeded (attempt %d): %.1f KB\n', ...
-                        attempt, status/1024);
-                return;
-            else
-                warning('EDF transfer attempt %d failed', attempt);
-                WaitSecs(0.5);
-            end
+    % Full destination FILE path (absolute, so it does not depend on cwd)
+    localPath = fullfile(pwd, edf_output_folder_name, edf_file_name);
+    maxTries  = 5;
+    for attempt = 1:maxTries
+        if ~Eyelink('IsConnected')
+            warning('Link down before transfer attempt %d', attempt);
+            WaitSecs(1);
+            continue;
         end
 
-        error('EDF transfer failed after %d attempts', maxTries);
+        % Remove any partial file left by a previous attempt
+        if isfile(localPath)
+            delete(localPath);
+        end
+
+        % 3rd arg = 0: localPath is the destination file itself. (With 1 it
+        % is treated as a folder and the file name is appended to it.)
+        status = Eyelink('ReceiveFile', edf_file_name, localPath, 0);
+
+        % status is the size in bytes of the file on the Host PC
+        info = dir(localPath);
+        if isempty(info)
+            localBytes = 0;
+        else
+            localBytes = info(1).bytes;
+        end
+
+        if status > 0 && localBytes == status
+            fprintf('EDF transfer succeeded (attempt %d): %.1f KB\n', attempt, status/1024);
+            ok = true;
+            break;
+        end
+        warning('EDF transfer attempt %d incomplete (status %d, %d bytes on disk), retrying...', attempt, status, localBytes);
+        WaitSecs(1 + attempt);   % escalating wait
     end
-catch
-    fprintf('Problem receiving EDF file ''%s''\n', edf_file_name);
-    psychrethrow(psychlasterror);
+    if ~ok
+        warning('EDF transfer FAILED after %d attempts. File may still be on Host PC: %s', maxTries, edf_file_name);
+    end
+catch ME
+    warning('Problem receiving EDF ''%s'': %s', edf_file_name, ME.message);
 end
+Priority(oldPriority);
 end
