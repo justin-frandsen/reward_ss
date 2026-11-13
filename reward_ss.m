@@ -37,11 +37,11 @@ addpath(genpath('setup'));
 
 %% COLUMN NAMES FOR SCENE MATRIX
 SCENE_INDS = 1;
-REP        = 2; % just used to create the randomizor matrix not used in the experiment
-RUN        = 3; % col contains the run number
-DISTRACTOR = 4;
-TARGET     = 5;
-CONDITION  = 6;
+SCENE_ID   = 1;
+REP        = 2;
+RUN        = 3;
+TARGET     = 4;
+CONDITION  = 5;
 
 %% -----------------------------------------------------------------------
 % SETTINGS
@@ -54,7 +54,7 @@ expName      = 'curious_ss';
 refresh_rate = 60;  % Hz
 
 % Eyetracker
-eyetracking             = true; % true = real eyetracking, false = no eyetracking
+eyetracking             = false; % true = real eyetracking, false = no eyetracking
 fixationTimeThreshold   = 50;    % ms, minimum fixation duration to log
 fix.radius              = 90;
 fix.timeout             = 5000;
@@ -65,8 +65,7 @@ eye_used             = 2; % 1 = left eye, 2 = right eye, 3 = both eyes want to c
 border_line_width = 30;
 penalty           = 2000;  % ms
 timeout           = 5000;  % ms
-post_search_duration = 5;  % sec
-feedback_duration   = 0.2; % sec
+feedback_duration   = 1; % sec
 
 % Trial control
 main_runs      = 6;
@@ -121,29 +120,46 @@ instruction_shapes       = 'stimuli/shapes/instructions';
 % Output formats
 bx_file_format   = 'bx_Subj%.3dRun%.2d.csv';
 eye_file_format  = 'fixation_data_subj_%.3d_run_%.3d.csv';
-edf_file_format  = 'RWD%.3dR%.1d.edf';
+edf_file_format  = 'RS%.3dR%.1d.edf';
 MAT_file_format  = 'subj%.3d_run%.2d.mat';
 
 %% GET SUBJECT INFO
 [sub_num, run_num, experimenter_initials] = experiment_setup();
 
+if run_num > 2
+    last_run_file = fullfile(bx_output_folder_name, ...
+        sprintf('Subj%.3dRun%.2d.csv', sub_num, run_num-1));
+
+    if exist(last_run_file, 'file')
+        last_run_data = readtable(last_run_file);
+
+        % Get last non-empty earnings value
+        last_valid_idx = find(~isnan(last_run_data.total_earnings), 1, 'last');
+
+        if ~isempty(last_valid_idx)
+            ACCcount = last_run_data.total_earnings(last_valid_idx);
+        else
+            ACCcount = 0;
+        end
+    else
+        warning('Previous run file not found. Starting earnings at 0.');
+        ACCcount = 0;
+    end
+else
+    ACCcount = 0;
+end
+
 %% MAKE SURE data directory and its subdirectories exist
 subdirs = {'bx_data', 'edf_data', 'eye_data', 'log_files', 'MAT_data'};
 
 if ~exist(data_folder, 'dir')
-    [status, msg] = mkdir(data_folder);
-    if ~status
-        error('Failed to create directory: %s', msg);
-    end
+    mkdir(data_folder);
 end
 
 for i = 1:length(subdirs)
     subdir_path = fullfile(data_folder, subdirs{i});
     if ~exist(subdir_path, 'dir')
-        [status, msg] = mkdir(subdir_path);
-        if ~status
-            error('Failed to create directory: %s', msg);
-        end
+        mkdir(subdir_path);
     end
 end
 
@@ -154,7 +170,7 @@ if exist(fullfile(bx_output_folder_name, bx_file_name), 'file')
     error('Subject bx file already exists. Delete the file to rerun with the same subject number.');
 end
 
-% Test if preprocessed eyemovement data file already exists
+% Test if preprocessed eye movement data file already exists
 eye_file_name = sprintf(eye_file_format, sub_num, run_num);
 if exist(fullfile(eye_output_folder_name, eye_file_name), 'file')
     error('Subject eye file already exists. Delete the file to rerun with the same subject number.');
@@ -224,7 +240,6 @@ if eyetracking
 end
 %% Start Experiment
 t = 0;
-ACCcount = 0;
 trialcounter = 0;
 
 %% EXPERIMENT START
@@ -233,26 +248,28 @@ for run_looper = run_num:total_runs
     logFile = sprintf('data/log_files/subj%d_run%dlog.txt', sub_num, run_looper);
     sessionStart = now;
 
+    % Load shape positions
     if run_looper == 1
-        % Load in the shape positions
-        shape_positions = load('trial_structure_files/practice_shape_positions.mat'); % Load the shape positions
-        saved_positions = shape_positions.saved_positions; % Assign saved_positions for later use
+        % Run 1 is practice
+        phase = 'practice';
+        shape_positions = load('trial_structure_files/practice_shape_positions.mat');
     else
-        % Load in the shape positions
-        shape_positions = load('trial_structure_files/shape_positions.mat'); % Load the shape positions
-        saved_positions = shape_positions.saved_positions; % Assign saved_positions for later use
+        % All other runs are testing
+        phase = 'testing';
+        shape_positions = load('trial_structure_files/shape_positions.mat');
     end
+    saved_positions = shape_positions.saved_positions;
+
+        %% Loop through trials
+    if run_looper == 1
+        total_trials = 12;
+    elseif run_looper > 1
+        total_trials = 72;
+    end
+
+    clear bx_trial_info; % Clear bx_trial_info before initializing for the new run
 
     %% INITIALIZE BX STRUCT
-    % Preallocate structure for all trials
-    if run_looper == 1
-        phase = 'practice';
-    elseif run_looper > 1 && run_looper <= 5
-        phase = 'training';
-    elseif run_looper > 5
-        phase = 'testing';
-    end
-
     bx_trial_info(1:total_trials) = struct( ...
         'sub_num', sub_num, ...                      % subject ID
         'run_num', run_looper, ...                   % run number
@@ -278,7 +295,9 @@ for run_looper = run_num:total_runs
         'trial_onset', [], ...                       % stim onset (absolute)
         'trial_offset', [], ...                      % stim offset (absolute)
         'response_clock_time', [], ...               % time of response key
-        'timestamp', '' ...                          % optional formatted datetime
+        'timestamp', '', ...                         % optional formatted datetime
+        'total_earnings', [], ...                     % total earnings for the participant
+        'reward_amount', [] ...                   % reward amount for this trial
     );
 
 
@@ -290,11 +309,9 @@ for run_looper = run_num:total_runs
     this_subj_this_run = randomizor.(sprintf('subj%d', sub_num)).(sprintf('run%d', run_looper)); %method of getting into the struct
 
     scene_randomizor = this_subj_this_run.scene_randomizor; % Get the scene randomizor for this subject and run
-    target_inds = this_subj_this_run.first_half_targets;
+    target_inds = this_subj_this_run.targets;
     target_associations = this_subj_this_run.target_associations;
-    critical_distractor_inds = this_subj_this_run.first_half_critical_distractors;
-    critical_distractor_associations = this_subj_this_run.critical_distractors_associations;
-    noncritical_distractors = this_subj_this_run.noncritical_distractors;
+    noncritical_distractors = this_subj_this_run.distractors;
 
     
     if eyetracking
@@ -308,6 +325,7 @@ for run_looper = run_num:total_runs
 
         % Open EDF file on Eyelink computer
         i = Eyelink('OpenFile', edf_file_name);
+        Eyelink('Message', 'DISPLAY_COORDS 0 0 %d %d', width-1, height-1);
         if i ~= 0
             fprintf('Cannot create EDF file ''%s''.\n', edf_file_name);
             Eyelink('Shutdown');
@@ -324,13 +342,6 @@ for run_looper = run_num:total_runs
     
     % show instructions
     showInstructions(w, sorted_instruction_shapes_textures, key.left, key.right);
-
-    %% Loop through trials
-    if run_looper == 1
-        total_trials = 8;
-    elseif run_looper > 1
-        total_trials = 72;
-    end
 
     for trial_looper = 1:total_trials
         if eyetracking
@@ -350,45 +361,23 @@ for run_looper = run_num:total_runs
         t_directions                   = this_subj_this_run.t_directions(trial_looper, :); % Get the target directions for this trial
         target_index1                  = scene_randomizor(trial_looper, TARGET);
 
-        if run_looper <= 5
-            target_texture_index       = target_inds(target_index1);
-            target_association         = target_associations(target_index1); %1 = wall 2 = counter, 3 = floor.
-        elseif run_looper > 5
-            target_texture_index       = critical_distractor_inds(target_index1); %in testing we use the critical distractor shapes as targets
-            target_association         = critical_distractor_associations(target_index1); %1 = wall 2 = counter, 3 = floor.
-        end
-        
-        trial_condition                = scene_randomizor(trial_looper, CONDITION);
-        this_run_distractors           = this_subj_this_run.this_run_distractors(trial_looper, :);
-        length_this_run_distractors    = length(this_run_distractors);
-        this_trial_distractors         = noncritical_distractors(1:length_this_run_distractors-1); % remove the last one which is just the run number
+        target_texture_index       = target_inds(target_index1);
+        target_association         = target_associations(target_index1); %1 = wall 2 = counter, 3 = floor.
 
-        % get critical distractor info if in training phase
-        if run_looper <= 5 && run_looper > 1
-            critical_distractor_index1 = scene_randomizor(trial_looper, DISTRACTOR);
-            cd_texture_index = critical_distractor_inds(critical_distractor_index1);
-            critical_distractor_association = critical_distractor_associations(critical_distractor_index1);
-        else
-            cd_texture_index = NaN; % no critical distractor in testing phase
-            critical_distractor_association = NaN;
-        end
+        trial_condition            = scene_randomizor(trial_looper, CONDITION);
+        this_trial_distractors     = this_subj_this_run.this_run_distractors(trial_looper, 1:3);
 
         %% DRAW SCENE   
         search = Screen('OpenOffscreenWindow', scrID, col.bg, rect, 32);
-        post_search = Screen('OpenOffscreenWindow', scrID, col.bg, rect, 32);
         % Draw the scene texture
         if run_looper == 1
             Screen('DrawTexture', search, practice_scene_textures(scene_inds), [], rect);
-            Screen('DrawTexture', post_search, practice_scene_textures(scene_inds), [], rect);
         else
             Screen('DrawTexture', search, scene_textures(scene_inds), [], rect);
-            Screen('DrawTexture', post_search, scene_textures(scene_inds), [], rect);
         end
 
         % Enable blending for transparency inside this offscreen window
         Screen('BlendFunction', search, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        % Enable blending for transparency inside this offscreen window
-        Screen('BlendFunction', post_search, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
         types     = [1 2 3];      % semantic categories: wall/counter/floor
         positions = [1 2 3 4];    % physical rect indices
@@ -431,43 +420,17 @@ for run_looper = run_num:total_runs
         
         crit_dist_position = []; 
         rect_id = 2; % ID for critical distractor AOI
-        
-        % ---- draw CRITICAL DISTRACTOR only in training
-        if run_looper <= 5 && run_looper > 1
-            crit_pos  = possible_positions(4); % 4th entry encodes CD position
-            remaining_positions = setdiff(remaining_positions, crit_pos, 'stable'); % remove CD position from remaining positions
-            crit_rect = saved_positions{scene_inds, crit_pos};
-            if t_directions(4) == 0
-                % left critical distractor
-                Screen('DrawTexture', search, sorted_left_shapes_textures(cd_texture_index), [], crit_rect);
-                Screen('DrawTexture', post_search, sorted_left_shapes_textures(cd_texture_index), [], crit_rect);
-            elseif t_directions(4) == 1
-                % right critical distractor
-                Screen('DrawTexture', search, sorted_right_shapes_textures(cd_texture_index), [], crit_rect);
-                Screen('DrawTexture', post_search, sorted_right_shapes_textures(cd_texture_index), [], crit_rect);
-            end
-
-            if eyetracking
-                % Define AOIs
-                Eyelink('command', 'draw_box %d %d %d %d %d', ceil(crit_rect(1)), ceil(crit_rect(2)), ceil(crit_rect(3)), ceil(crit_rect(4)), 7);  % Critical distractor in gray
-                Eyelink('Message', '!V IAREA RECTANGLE %d %d %d %d %d CritDistBox', rect_id, ceil(crit_rect(1)), ceil(crit_rect(2)), ceil(crit_rect(3)), ceil(crit_rect(4)));
-                rect_id = rect_id + 1; % Increment rect_id for next AOI
-            end
-        end
 
         for k = 1:numel(remaining_positions)
             this_pos  = remaining_positions(k);       % map TYPE → POSITION
             this_rect = saved_positions{scene_inds, this_pos};
             distractor_texture_index = this_trial_distractors(k);
-            this_distarctor = noncritical_distractors(distractor_texture_index);
             if t_directions(1+k) == 0
                 % left non-critical distractor
-                Screen('DrawTexture', search, sorted_left_shapes_textures(this_distarctor), [], this_rect);
-                Screen('DrawTexture', post_search, sorted_left_shapes_textures(this_distarctor), [], this_rect);
+                Screen('DrawTexture', search, sorted_left_shapes_textures(distractor_texture_index), [], this_rect);
             elseif t_directions(1+k) == 1
                 % right non-critical distractor
-                Screen('DrawTexture', search, sorted_right_shapes_textures(this_distarctor), [], this_rect);
-                Screen('DrawTexture', post_search, sorted_right_shapes_textures(this_distarctor), [], this_rect);
+                Screen('DrawTexture', search, sorted_right_shapes_textures(distractor_texture_index), [], this_rect);
             end
 
             if eyetracking
@@ -524,9 +487,6 @@ for run_looper = run_num:total_runs
         if eyetracking
             Eyelink('Message', 'START_TIME SEARCH_PERIOD');
             Eyelink('Message', 'SYNCTIME');
-            Eyelink('Message', '!V TRIAL_VAR condition %d', trial_condition);
-            Eyelink('Message', '!V TRIAL_VAR block %d', run_looper);
-            Eyelink('Message', '!V TRIAL_VAR scene %d', scene_inds);
         end
         % --- Wait for response or until deadline ---
         responseMade = false;
@@ -547,6 +507,7 @@ for run_looper = run_num:total_runs
                     responseMade = true;
                 
                     if eyetracking
+                        Eyelink('Message', 'END_TIME SEARCH_PERIOD');
                         Eyelink('Message', 'RESPONSE Key %s RT %d', response, RT);
                     end
                 
@@ -587,17 +548,6 @@ for run_looper = run_num:total_runs
         bx_trial_info(trial_looper).target_shape_association = target_association;
         bx_trial_info(trial_looper).target_position          = target_position;
         bx_trial_info(trial_looper).target_rect              = target_rect;
-        
-        % Distractors
-        if run_looper <= 5 && run_looper > 1
-            bx_trial_info(trial_looper).critical_distractor_idx         = cd_texture_index;
-            bx_trial_info(trial_looper).critical_distractor_association = critical_distractor_association;
-            bx_trial_info(trial_looper).critical_distractor_rect        = crit_rect;
-        else
-            bx_trial_info(trial_looper).critical_distractor_idx         = NaN;
-            bx_trial_info(trial_looper).critical_distractor_association = NaN;
-            bx_trial_info(trial_looper).critical_distractor_rect        = [];
-        end
 
         %bx_trial_info(trial_looper).noncritical_distractor_idx   = noncritical_distractors;
         %bx_trial_info(trial_looper).noncritical_distractor_rects = noncrit_rects;
@@ -619,69 +569,76 @@ for run_looper = run_num:total_runs
         % Timestamp (human-readable string, e.g., for debugging logs)
         bx_trial_info(trial_looper).timestamp = datestr(now, 'yyyy-mm-dd HH:MM:SS.FFF');
 
-
-        post_search_duration = 4; % 4 seconds
-        feedback_duration = 0.2; % seconds
-        post_viewing = true;
-
-        % if incorrect give feedback (red border) for 200 ms then show post search screen for remaining time
-        % if correct show post search screen for full duration
-        if run_looper <= 5 && run_looper > 1
-            if trial_accuracy == 0
-                resp_color = col.red;
-                Screen('DrawTexture', w, post_search);
-                Screen('FrameRect', w, resp_color, rect, border_line_width);
-                Screen('flip', w);
-                % Eyelink message for feedback onset
-                if eyetracking
-                    Eyelink('Message', 'END_TIME SEARCH_PERIOD');
-                    Eyelink('Message', 'START_TIME POST_SEARCH_PERIOD');
-                    Eyelink('Message', 'Feedback: Incorrect onset / Post-search onset');
-                end
-
-                WaitSecs(feedback_duration); % 200 ms
-                Screen('DrawTexture', w, post_search);
-                Screen('flip', w);
-
-                % Eyelink message for feedback offset / post-search onset
-                if eyetracking
-                    Eyelink('Message', 'Feedback: Incorrect offset / Post-search continued');
-                end
-
-                WaitSecs(post_search_duration-feedback_duration)
-            elseif trial_accuracy == 1
-                resp_color = col.green;
-                Screen('DrawTexture', w, post_search);
-                Screen('flip', w);
-
-                % Eyelink message for correct feedback/post-search
-                if eyetracking
-                    Eyelink('Message', 'END_TIME SEARCH_PERIOD');
-                    Eyelink('Message', 'START_TIME POST_SEARCH_PERIOD');
-                end
-
-                WaitSecs(post_search_duration)
+        %If run 1 give incorrect or correct feedback. If correct give feedback for the amount of money made that trial and the total amount of money.
+        %high reward trials earch them .15 cents and low reward trials are .05 cents. If incorrect show red X and say no money earned that trial and show total amount of money.
+        if run_looper == 1
+            if trial_accuracy == 1 % Correct response
+                feedback_text = 'Correct!';
+                feedback_color = col.green;
+            else
+                feedback_text = 'Incorrect';
+                feedback_color = col.red;
             end
-        elseif run_looper == 1 || run_looper > 4
-            if trial_accuracy == false
-                DrawFormattedText(w, 'Incorrect!', 'center', 'center', col.fg);
-                Screen('Flip', w);
-                WaitSecs(.5); % Wait for 2 seconds before closing
+
+            % Draw feedback
+            DrawFormattedText(w, feedback_text, 'center', 'center', feedback_color);
+            Screen('Flip', w);
+            WaitSecs(1);
+        elseif run_looper > 1
+            if trial_accuracy == 1
+                if trial_condition == 0
+                    reward_amount = 15;
+                else
+                    reward_amount = 2;
+                end
+            
+                ACCcount = ACCcount + reward_amount;
+            
+                feedback_text = sprintf('+$%.2f\nTotal: $%.2f', reward_amount/100, ACCcount/100);
+                feedback_color = col.green;
+            
+            else % incorrect trial
+                reward_amount = 0;
+            
+                feedback_text = sprintf('No reward\nTotal: $%.2f', ACCcount/100);
+                feedback_color = col.red;
             end
+
+            % Draw feedback
+            Screen('FillRect', w, col.bg);
+            Screen('Flip', w); %draw blank screen before feedback for 1 second
+            if eyetracking
+                Eyelink('Message', 'START_TIME feedback_blank');
+            end
+            WaitSecs(1);
+            DrawFormattedText(w, feedback_text, 'center', 'center', feedback_color);
+            Screen('Flip', w); %draw feedback screen for 1.5 seconds
+            if eyetracking
+                Eyelink('Message', 'START_TIME feedback_display');
+            end
+            WaitSecs(1.5);
         end
+        
+        % Save reward information to bx_trial_info
+        if run_looper == 1
+            reward_amount = trial_accuracy * 0; % No reward in practice, but log 0 for consistency
+        end
+        
+        bx_trial_info(trial_looper).reward_amount = reward_amount; % Reward for this trial
+        bx_trial_info(trial_looper).total_earnings = ACCcount; % Accumulated reward
+        
         %draw blank ITI
         Screen('flip', w);
 
         if eyetracking
-            if run_looper <= 5 && run_looper > 1
-                Eyelink('Message', 'END_TIME POST_SEARCH_PERIOD');
-            elseif run_looper == 1 || run_looper > 5
-                Eyelink('Message', 'END_TIME SEARCH_PERIOD');
-            end
             Eyelink('Message', '!V IAREA END');
             Eyelink('Message', '!V TRIAL_VAR RT %d', RT);
             Eyelink('Message', '!V TRIAL_VAR acc %d', trial_accuracy);
+            Eyelink('Message', '!V TRIAL_VAR condition %d', trial_condition);
+            Eyelink('Message', '!V TRIAL_VAR block %d', run_looper);
+            Eyelink('Message', '!V TRIAL_VAR scene %d', scene_inds);
 
+            Eyelink('Message', 'TRIAL_RESULT 0');
             Eyelink('StopRecording');
         end
         WaitSecs(.5); % 500 ms ITI
@@ -691,34 +648,20 @@ for run_looper = run_num:total_runs
     %% SAVE EYETRACKING DATA
     if eyetracking
         Eyelink('Message', 'Experiment end Subject %d Run %d', sub_num, run_looper);
-        % Go idle and close file
-        Eyelink('Command', 'set_idle_mode');
+
+        % ---- REQUIRED SEQUENCE ----
+        Eyelink('SetOfflineMode');
+        Eyelink('Command', 'clear_screen 0');
         WaitSecs(0.5);
-        status = Eyelink('CloseFile'); %close the EDF file
+
+        status = Eyelink('CloseFile');
         if status ~= 0
-            fprintf('CloseFile failed with status %d\n', status);
+            warning('CloseFile returned status %d', status);
         end
-        
-        % Wait a bit longer for safety
-        WaitSecs(2);
+        WaitSecs(0.5);
 
-        % Full local path to save EDF file
-        localPath = fullfile(edf_output_folder_name, edf_file_name);
-
-        maxTries = 3;
-        for attempt = 1:maxTries
-            try
-                status = Eyelink('ReceiveFile', edf_file_name, localPath, 1);
-                if status > 0 && exist(localPath, 'file')
-                    fprintf('EDF transfer succeeded on attempt %d\n', attempt);
-                    break;
-                else
-                    warning('EDF transfer attempt %d failed, retrying...\n', attempt);
-                end
-            catch
-                warning('Error during ReceiveFile attempt %d\n', attempt);
-            end
-        end
+        % ---- TRANSFER EDF ----
+        transferEDF(edf_file_name, edf_output_folder_name, eyetracking, w, el, height);
     end
 
     %% SAVE BX DATA
@@ -736,7 +679,7 @@ for run_looper = run_num:total_runs
     csv_filename = fullfile(bx_output_folder_name, csv_filename);
     MAT_filename = fullfile(mat_output_folder_name, MAT_filename);
     
-    %write files
+    % Write files
     writetable(trialTable, csv_filename);
     fprintf('[INFO] Saved behavioral data: %s\n', csv_filename);
     
@@ -766,3 +709,34 @@ pfp_ptb_cleanup; % cleanup PTB
 %close all; % close all windows
 %clear all; % clear all variables
 sca; % close PTB
+
+function transferEDF(edf_file_name, edf_output_folder_name, eyetracking, window, el, height)
+try
+    if eyetracking
+        Screen('FillRect', window, el.backgroundcolour);
+        Screen('DrawText', window, 'Receiving data file...', 5, height-35, 0);
+        Screen('Flip', window);
+
+        fprintf('Receiving data file ''%s''\n', edf_file_name);
+
+        maxTries = 3;
+        for attempt = 1:maxTries
+            status = Eyelink('ReceiveFile', [], edf_output_folder_name, 1);
+
+            if status > 0 && exist(fullfile(edf_output_folder_name, edf_file_name), 'file')
+                fprintf('EDF transfer succeeded (attempt %d): %.1f KB\n', ...
+                        attempt, status/1024);
+                return;
+            else
+                warning('EDF transfer attempt %d failed', attempt);
+                WaitSecs(0.5);
+            end
+        end
+
+        error('EDF transfer failed after %d attempts', maxTries);
+    end
+catch
+    fprintf('Problem receiving EDF file ''%s''\n', edf_file_name);
+    psychrethrow(psychlasterror);
+end
+end

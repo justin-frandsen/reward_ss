@@ -28,7 +28,7 @@ sca;
 %% ADD PATHS
 addpath(genpath('../'));
 
-main = true; % set to false to only run practice scenes
+main = false; % set to false to only run practice scenes
 %% settings
 if main
     scene_folder = '../../stimuli/scenes/main';
@@ -93,7 +93,7 @@ number_of_positions = 6; % Number of positions to save for each scene
 KbName('UnifyKeyNames');
 
 %loop for presenting scenes and their
-for scene_num = 54:length(scenes_texture_matrix)
+for scene_num = 1:length(scenes_texture_matrix)
     fprintf('%d / %d\n', scene_num, length(scenes_texture_matrix));
     %% DRAW SCENE   
     scene = Screen('OpenOffscreenWindow', scrID, col.bg, rect);
